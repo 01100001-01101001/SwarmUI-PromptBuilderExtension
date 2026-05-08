@@ -60,8 +60,14 @@ var Templates;
             <button class="pb-action-button" id="pb-copy-button" title="Copy to clipboard">⿻</button>
             <button class="pb-action-button" id="pb-clear-button" title="Clear all tags">✕</button>
             <button class="pb-action-button" id="pb-retry-button" title="Retry generation">↻</button>
+            <button class="pb-action-button pb-random-mode-btn" id="pb-random-mode-btn" title="Add a random group — pick from multiple options at generation time">&#127922; Random</button>
             {{popoutButton}}
             <div class="pb-selected-tags" id="pb-selected-tags"></div>
+        </div>
+        <div class="pb-random-mode-controls" id="pb-random-mode-controls" style="display:none;">
+            <span class="pb-random-mode-label" id="pb-random-mode-label">0 tags selected</span>
+            <button class="pb-action-button pb-random-confirm-btn" id="pb-random-confirm-btn" disabled>&#10003; Confirm Group</button>
+            <button class="pb-action-button pb-random-cancel-btn" id="pb-random-cancel-btn">&#10005; Cancel</button>
         </div>
         <div class="pb-items-container" id="pb-items-container">
             <div class="pb-items-grid"></div>
@@ -165,6 +171,16 @@ var Templates;
   />
 </div>
 `;
+    Templates.tagChipRandom = `<div
+  class="pb-tag-chip pb-tag-chip-random"
+  draggable="true"
+  data-index="{{index}}"
+  data-tag="{{tag}}"
+>
+  <span class="pb-tag-chip-random-icon">&#127922;</span>
+  <span class="pb-tag-chip-random-tags">{{tags}}</span>
+</div>
+`;
     Templates.tagChip = `<div
   class="pb-tag-chip"
   draggable="true"
@@ -190,6 +206,10 @@ class PromptBuilderApp {
         this.editingTagIndex = null;
         this.hoveredTagIndex = null;
         this.keyboardListenerAttached = false;
+        this.isRandomMode = false;
+        this.pendingRandomTags = [];
+        this.randomGroups = new Map();
+        this.randomGroupCounter = 0;
         this.DEFAULT_SETTINGS = {
             autoGenerate: false,
             autoGenerateThreshold: 3,
@@ -301,9 +321,11 @@ class PromptBuilderApp {
         this.renderNavigation();
         this.renderSelectedTags();
         this.renderItems();
+        this.renderRandomModeControls();
         this.initializeResize();
         this.attachSearchListener();
         this.attachKeyboardListener();
+        this.attachRandomModeListeners();
         if (!isInPopup) {
             this.attachSettingsListeners();
         }
@@ -672,15 +694,25 @@ class PromptBuilderApp {
             ? items.filter(item => item.value.toLowerCase().includes(this.searchFilter))
             : items;
         let html = '';
+        const allGroupedTags = new Set([...this.randomGroups.values()].flat());
         filtered.forEach(item => {
             let link = '';
             if (this.settings.danbooruLinks) {
                 link = Templates.danbooruLink
                     .replaceAll('{{encodedTag}}', encodeURIComponent(item.value));
             }
+            const isPendingRandom = this.pendingRandomTags.includes(item.value);
+            const isSelected = this.selectedTags.includes(item.value) || allGroupedTags.has(item.value);
+            let cardClass = '';
+            if (isPendingRandom) {
+                cardClass = 'pending-random';
+            }
+            else if (isSelected) {
+                cardClass = 'selected';
+            }
             html += Templates.itemCard
                 .replaceAll('{{value}}', this.escapeHtml(item.value))
-                .replaceAll('{{selected}}', this.selectedTags.includes(item.value) ? 'selected' : '')
+                .replaceAll('{{selected}}', cardClass)
                 .replaceAll('{{link}}', link);
         });
         container.innerHTML = html;
@@ -740,6 +772,21 @@ class PromptBuilderApp {
         });
     }
     toggleTag(value) {
+        if (this.isRandomMode) {
+            const i = this.pendingRandomTags.indexOf(value);
+            if (i === -1) {
+                this.pendingRandomTags.push(value);
+            }
+            else {
+                this.pendingRandomTags.splice(i, 1);
+            }
+            this.renderItems();
+            this.renderRandomModeControls();
+            return;
+        }
+        const allGroupedTags = new Set([...this.randomGroups.values()].flat());
+        if (allGroupedTags.has(value))
+            return;
         this.selectedTags.push(value);
         this.renderSelectedTags();
         this.renderItems();
@@ -749,6 +796,10 @@ class PromptBuilderApp {
         }
     }
     deleteTagAtIndex(index) {
+        const tag = this.selectedTags[index];
+        if (tag && tag.startsWith('__RAND_')) {
+            this.randomGroups.delete(tag.slice(7));
+        }
         this.selectedTags.splice(index, 1);
         this.renderSelectedTags();
         this.renderItems();
@@ -777,7 +828,17 @@ class PromptBuilderApp {
         }
         // Set the value to comma-separated tags with escaped parentheses
         const tagsString = this.selectedTags
-            .map(tag => tag.replace(/\(/g, '\\(').replace(/\)/g, '\\)'))
+            .map(tag => {
+            if (tag.startsWith('__RAND_')) {
+                const group = this.randomGroups.get(tag.slice(7)) || [];
+                if (group.length === 0)
+                    return '';
+                const chosen = group[Math.floor(Math.random() * group.length)];
+                return chosen.replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+            }
+            return tag.replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+        })
+            .filter(t => t !== '')
             .join(', ');
         pbPromptInput.value = tagsString;
         pbPromptInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -790,7 +851,8 @@ class PromptBuilderApp {
                     payload: {
                         selectedTags: [...this.selectedTags],
                         expandedGroups: Array.from(this.expandedGroups),
-                        currentSelection: this.currentSelection
+                        currentSelection: this.currentSelection,
+                        randomGroups: Object.fromEntries(this.randomGroups)
                     }
                 }, '*');
             }
@@ -806,6 +868,14 @@ class PromptBuilderApp {
             return;
         }
         container.innerHTML = this.selectedTags.map((tag, index) => {
+            if (tag.startsWith('__RAND_')) {
+                const id = tag.slice(7);
+                const groupTags = this.randomGroups.get(id) || [];
+                return Templates.tagChipRandom
+                    .replaceAll('{{index}}', String(index))
+                    .replaceAll('{{tag}}', tag)
+                    .replaceAll('{{tags}}', this.escapeHtml(groupTags.join(' | ')));
+            }
             if (this.editingTagIndex === index) {
                 return Templates.tagChipEditing
                     .replaceAll('{{index}}', String(index))
@@ -871,14 +941,15 @@ class PromptBuilderApp {
                     console.error('PromptBuilder: Could not find AdvancedPopover');
                     return false;
                 }
+                const isRandChip = chipElement.classList.contains('pb-tag-chip-random');
                 const popoverActions = [
-                    {
-                        key: 'Edit',
-                        action: () => {
-                            this.editingTagIndex = index;
-                            this.renderSelectedTags();
-                        }
-                    },
+                    ...(!isRandChip ? [{
+                            key: 'Edit',
+                            action: () => {
+                                this.editingTagIndex = index;
+                                this.renderSelectedTags();
+                            }
+                        }] : []),
                     {
                         key: 'Delete',
                         action: () => {
@@ -975,7 +1046,19 @@ class PromptBuilderApp {
             return;
         }
         try {
-            await navigator.clipboard.writeText(this.selectedTags.join(', '));
+            const clipboardText = this.selectedTags
+                .map(tag => {
+                if (tag.startsWith('__RAND_')) {
+                    const group = this.randomGroups.get(tag.slice(7)) || [];
+                    if (group.length === 0)
+                        return '';
+                    return group[Math.floor(Math.random() * group.length)];
+                }
+                return tag;
+            })
+                .filter(t => t !== '')
+                .join(', ');
+            await navigator.clipboard.writeText(clipboardText);
             const button = this.getButton('pb-copy-button');
             const originalText = button.innerHTML;
             button.innerHTML = '✓';
@@ -991,10 +1074,78 @@ class PromptBuilderApp {
     }
     clearAllTags() {
         this.selectedTags = [];
+        this.randomGroups = new Map();
+        this.randomGroupCounter = 0;
+        this.isRandomMode = false;
+        this.pendingRandomTags = [];
         this.renderSelectedTags();
         this.renderItems();
+        this.renderRandomModeControls();
         this.updatePBPromptField();
         this.log('Cleared all tags');
+    }
+    enterRandomMode() {
+        this.isRandomMode = true;
+        this.pendingRandomTags = [];
+        this.renderItems();
+        this.renderRandomModeControls();
+    }
+    exitRandomMode(confirm) {
+        if (confirm && this.pendingRandomTags.length >= 2) {
+            const id = String(this.randomGroupCounter++);
+            this.randomGroups.set(id, [...this.pendingRandomTags]);
+            this.selectedTags.push(`__RAND_${id}`);
+            this.renderSelectedTags();
+            this.updatePBPromptField();
+            if (this.settings.autoGenerate && this.selectedTags.length >= this.settings.autoGenerateThreshold) {
+                this.triggerGeneration();
+            }
+        }
+        this.isRandomMode = false;
+        this.pendingRandomTags = [];
+        this.renderItems();
+        this.renderRandomModeControls();
+    }
+    renderRandomModeControls() {
+        const controlsEl = document.getElementById('pb-random-mode-controls');
+        const btn = document.getElementById('pb-random-mode-btn');
+        const label = document.getElementById('pb-random-mode-label');
+        const confirmBtn = document.getElementById('pb-random-confirm-btn');
+        if (!controlsEl)
+            return;
+        if (this.isRandomMode) {
+            controlsEl.style.display = 'flex';
+            btn?.classList.add('active');
+            if (label) {
+                label.textContent = `${this.pendingRandomTags.length} tag${this.pendingRandomTags.length !== 1 ? 's' : ''} selected`;
+            }
+            if (confirmBtn) {
+                confirmBtn.disabled = this.pendingRandomTags.length < 2;
+            }
+        }
+        else {
+            controlsEl.style.display = 'none';
+            btn?.classList.remove('active');
+        }
+    }
+    attachRandomModeListeners() {
+        const randomBtn = document.getElementById('pb-random-mode-btn');
+        const confirmBtn = document.getElementById('pb-random-confirm-btn');
+        const cancelBtn = document.getElementById('pb-random-cancel-btn');
+        randomBtn?.addEventListener('click', () => {
+            if (this.isRandomMode) {
+                this.exitRandomMode(false);
+            }
+            else {
+                this.enterRandomMode();
+            }
+        });
+        confirmBtn?.addEventListener('click', () => {
+            this.exitRandomMode(true);
+        });
+        cancelBtn?.addEventListener('click', () => {
+            this.exitRandomMode(false);
+        });
     }
     triggerGeneration() {
         const mainDoc = this.getMainDocument();
@@ -1012,7 +1163,8 @@ class PromptBuilderApp {
         const currentState = {
             selectedTags: [...this.selectedTags],
             expandedGroups: Array.from(this.expandedGroups),
-            currentSelection: this.currentSelection ? { ...this.currentSelection } : null
+            currentSelection: this.currentSelection ? { ...this.currentSelection } : null,
+            randomGroups: Object.fromEntries(this.randomGroups)
         };
         const popupWindow = window.open('', 'PromptBuilder', 'width=1200,height=800,menubar=no,toolbar=no,location=no,status=no');
         if (!popupWindow) {
@@ -1074,6 +1226,7 @@ if (window.opener !== null) {
             app['selectedTags'] = savedState.selectedTags || [];
             app['expandedGroups'] = new Set(savedState.expandedGroups || []);
             app['currentSelection'] = savedState.currentSelection || null;
+            app['randomGroups'] = new Map(Object.entries(savedState.randomGroups || {}));
         }
         window['promptBuilderApp'] = app;
         app.init();
@@ -1105,6 +1258,7 @@ else if (typeof sessionReadyCallbacks !== 'undefined') {
         app['selectedTags'] = Array.isArray(payload.selectedTags) ? [...payload.selectedTags] : [];
         app['expandedGroups'] = new Set(payload.expandedGroups || []);
         app['currentSelection'] = payload.currentSelection || null;
+        app['randomGroups'] = new Map(Object.entries(payload.randomGroups || {}));
         // Re-render UI and update hidden field
         app['renderSelectedTags']();
         app['renderItems']();

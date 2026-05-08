@@ -14,6 +14,10 @@ class PromptBuilderApp {
     private editingTagIndex: number | null = null;
     private hoveredTagIndex: number | null = null;
     private keyboardListenerAttached: boolean = false;
+    private isRandomMode: boolean = false;
+    private pendingRandomTags: string[] = [];
+    private randomGroups: Map<string, string[]> = new Map();
+    private randomGroupCounter: number = 0;
     private DEFAULT_SETTINGS: PromptBuilderSettings = {
         autoGenerate: false,
         autoGenerateThreshold: 3,
@@ -137,9 +141,11 @@ class PromptBuilderApp {
         this.renderNavigation();
         this.renderSelectedTags();
         this.renderItems();
+        this.renderRandomModeControls();
         this.initializeResize();
         this.attachSearchListener();
         this.attachKeyboardListener();
+        this.attachRandomModeListeners();
 
         if (!isInPopup) {
             this.attachSettingsListeners();
@@ -593,6 +599,8 @@ class PromptBuilderApp {
 
         let html = '';
 
+        const allGroupedTags = new Set([...this.randomGroups.values()].flat());
+
         filtered.forEach(item => {
             let link = '';
 
@@ -601,9 +609,18 @@ class PromptBuilderApp {
                     .replaceAll('{{encodedTag}}', encodeURIComponent(item.value));
             }
 
+            const isPendingRandom = this.pendingRandomTags.includes(item.value);
+            const isSelected = this.selectedTags.includes(item.value) || allGroupedTags.has(item.value);
+            let cardClass = '';
+            if (isPendingRandom) {
+                cardClass = 'pending-random';
+            } else if (isSelected) {
+                cardClass = 'selected';
+            }
+
             html += Templates.itemCard
                 .replaceAll('{{value}}', this.escapeHtml(item.value))
-                .replaceAll('{{selected}}', this.selectedTags.includes(item.value) ? 'selected' : '')
+                .replaceAll('{{selected}}', cardClass)
                 .replaceAll('{{link}}', link);
         });
 
@@ -669,6 +686,21 @@ class PromptBuilderApp {
     }
 
     private toggleTag(value: string): void {
+        if (this.isRandomMode) {
+            const i = this.pendingRandomTags.indexOf(value);
+            if (i === -1) {
+                this.pendingRandomTags.push(value);
+            } else {
+                this.pendingRandomTags.splice(i, 1);
+            }
+            this.renderItems();
+            this.renderRandomModeControls();
+            return;
+        }
+
+        const allGroupedTags = new Set([...this.randomGroups.values()].flat());
+        if (allGroupedTags.has(value)) return;
+
         this.selectedTags.push(value);
         this.renderSelectedTags();
         this.renderItems();
@@ -680,6 +712,10 @@ class PromptBuilderApp {
     }
 
     private deleteTagAtIndex(index: number): void {
+        const tag = this.selectedTags[index];
+        if (tag && tag.startsWith('__RAND_')) {
+            this.randomGroups.delete(tag.slice(7));
+        }
         this.selectedTags.splice(index, 1);
         this.renderSelectedTags();
         this.renderItems();
@@ -713,7 +749,16 @@ class PromptBuilderApp {
 
         // Set the value to comma-separated tags with escaped parentheses
         const tagsString = this.selectedTags
-            .map(tag => tag.replace(/\(/g, '\\(').replace(/\)/g, '\\)'))
+            .map(tag => {
+                if (tag.startsWith('__RAND_')) {
+                    const group = this.randomGroups.get(tag.slice(7)) || [];
+                    if (group.length === 0) return '';
+                    const chosen = group[Math.floor(Math.random() * group.length)];
+                    return chosen.replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+                }
+                return tag.replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+            })
+            .filter(t => t !== '')
             .join(', ');
 
         pbPromptInput.value = tagsString;
@@ -728,7 +773,8 @@ class PromptBuilderApp {
                     payload: {
                         selectedTags: [...this.selectedTags],
                         expandedGroups: Array.from(this.expandedGroups),
-                        currentSelection: this.currentSelection
+                        currentSelection: this.currentSelection,
+                        randomGroups: Object.fromEntries(this.randomGroups)
                     }
                 }, '*');
             } catch (e) {
@@ -746,6 +792,15 @@ class PromptBuilderApp {
         }
 
         container.innerHTML = this.selectedTags.map((tag, index) => {
+            if (tag.startsWith('__RAND_')) {
+                const id = tag.slice(7);
+                const groupTags = this.randomGroups.get(id) || [];
+                return Templates.tagChipRandom
+                    .replaceAll('{{index}}', String(index))
+                    .replaceAll('{{tag}}', tag)
+                    .replaceAll('{{tags}}', this.escapeHtml(groupTags.join(' | ')));
+            }
+
             if (this.editingTagIndex === index) {
                 return Templates.tagChipEditing
                     .replaceAll('{{index}}', String(index))
@@ -823,14 +878,15 @@ class PromptBuilderApp {
                     return false;
                 }
 
+                const isRandChip = chipElement.classList.contains('pb-tag-chip-random');
                 const popoverActions = [
-                    {
+                    ...(!isRandChip ? [{
                         key: 'Edit',
                         action: () => {
                             this.editingTagIndex = index;
                             this.renderSelectedTags();
                         }
-                    },
+                    }] : []),
                     {
                         key: 'Delete',
                         action: () => {
@@ -951,7 +1007,18 @@ class PromptBuilderApp {
         }
 
         try {
-            await navigator.clipboard.writeText(this.selectedTags.join(', '));
+            const clipboardText = this.selectedTags
+                .map(tag => {
+                    if (tag.startsWith('__RAND_')) {
+                        const group = this.randomGroups.get(tag.slice(7)) || [];
+                        if (group.length === 0) return '';
+                        return group[Math.floor(Math.random() * group.length)];
+                    }
+                    return tag;
+                })
+                .filter(t => t !== '')
+                .join(', ');
+            await navigator.clipboard.writeText(clipboardText);
             const button = this.getButton('pb-copy-button');
             const originalText = button.innerHTML;
             button.innerHTML = '✓';
@@ -968,11 +1035,86 @@ class PromptBuilderApp {
 
     private clearAllTags(): void {
         this.selectedTags = [];
+        this.randomGroups = new Map();
+        this.randomGroupCounter = 0;
+        this.isRandomMode = false;
+        this.pendingRandomTags = [];
         this.renderSelectedTags();
         this.renderItems();
+        this.renderRandomModeControls();
         this.updatePBPromptField();
 
         this.log('Cleared all tags');
+    }
+
+    private enterRandomMode(): void {
+        this.isRandomMode = true;
+        this.pendingRandomTags = [];
+        this.renderItems();
+        this.renderRandomModeControls();
+    }
+
+    private exitRandomMode(confirm: boolean): void {
+        if (confirm && this.pendingRandomTags.length >= 2) {
+            const id = String(this.randomGroupCounter++);
+            this.randomGroups.set(id, [...this.pendingRandomTags]);
+            this.selectedTags.push(`__RAND_${id}`);
+            this.renderSelectedTags();
+            this.updatePBPromptField();
+
+            if (this.settings.autoGenerate && this.selectedTags.length >= this.settings.autoGenerateThreshold) {
+                this.triggerGeneration();
+            }
+        }
+        this.isRandomMode = false;
+        this.pendingRandomTags = [];
+        this.renderItems();
+        this.renderRandomModeControls();
+    }
+
+    private renderRandomModeControls(): void {
+        const controlsEl = document.getElementById('pb-random-mode-controls');
+        const btn = document.getElementById('pb-random-mode-btn') as HTMLButtonElement | null;
+        const label = document.getElementById('pb-random-mode-label');
+        const confirmBtn = document.getElementById('pb-random-confirm-btn') as HTMLButtonElement | null;
+
+        if (!controlsEl) return;
+
+        if (this.isRandomMode) {
+            controlsEl.style.display = 'flex';
+            btn?.classList.add('active');
+            if (label) {
+                label.textContent = `${this.pendingRandomTags.length} tag${this.pendingRandomTags.length !== 1 ? 's' : ''} selected`;
+            }
+            if (confirmBtn) {
+                confirmBtn.disabled = this.pendingRandomTags.length < 2;
+            }
+        } else {
+            controlsEl.style.display = 'none';
+            btn?.classList.remove('active');
+        }
+    }
+
+    private attachRandomModeListeners(): void {
+        const randomBtn = document.getElementById('pb-random-mode-btn');
+        const confirmBtn = document.getElementById('pb-random-confirm-btn');
+        const cancelBtn = document.getElementById('pb-random-cancel-btn');
+
+        randomBtn?.addEventListener('click', () => {
+            if (this.isRandomMode) {
+                this.exitRandomMode(false);
+            } else {
+                this.enterRandomMode();
+            }
+        });
+
+        confirmBtn?.addEventListener('click', () => {
+            this.exitRandomMode(true);
+        });
+
+        cancelBtn?.addEventListener('click', () => {
+            this.exitRandomMode(false);
+        });
     }
 
     private triggerGeneration(): void {
@@ -992,7 +1134,8 @@ class PromptBuilderApp {
         const currentState: PromptBuilderState = {
             selectedTags: [...this.selectedTags],
             expandedGroups: Array.from(this.expandedGroups),
-            currentSelection: this.currentSelection ? { ...this.currentSelection } : null
+            currentSelection: this.currentSelection ? { ...this.currentSelection } : null,
+            randomGroups: Object.fromEntries(this.randomGroups)
         };
 
         const popupWindow = window.open(
@@ -1071,6 +1214,7 @@ if (window.opener !== null) {
             app['selectedTags'] = savedState.selectedTags || [];
             app['expandedGroups'] = new Set(savedState.expandedGroups || []);
             app['currentSelection'] = savedState.currentSelection || null;
+            app['randomGroups'] = new Map(Object.entries(savedState.randomGroups || {}));
         }
 
         (window as any)['promptBuilderApp'] = app;
@@ -1106,6 +1250,7 @@ if (window.opener !== null) {
         app['selectedTags'] = Array.isArray(payload.selectedTags) ? [...payload.selectedTags] : [];
         app['expandedGroups'] = new Set(payload.expandedGroups || []);
         app['currentSelection'] = payload.currentSelection || null;
+        app['randomGroups'] = new Map(Object.entries(payload.randomGroups || {}));
 
         // Re-render UI and update hidden field
         app['renderSelectedTags']();

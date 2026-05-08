@@ -393,3 +393,78 @@
     height: 100vh !important;
     max-height: none !important;
 }
+
+/* Random Mode Controls */
+.pb-random-mode-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 20px;
+    background: color-mix(in srgb, #c97c00 12%, var(--background-panel));
+    border-bottom: 1px solid #c97c00;
+    flex-shrink: 0;
+}
+
+.pb-random-mode-label {
+    font-size: 0.9em;
+    color: var(--text-soft);
+    flex: 1;
+}
+
+.pb-random-confirm-btn {
+    border-color: #22a830 !important;
+    color: #22a830 !important;
+}
+
+.pb-random-confirm-btn:not(:disabled):hover {
+    background: color-mix(in srgb, #22a830 20%, var(--button-background-hover)) !important;
+}
+
+.pb-random-cancel-btn {
+    border-color: var(--red, #cc3333) !important;
+    color: var(--red, #cc3333) !important;
+}
+
+.pb-random-cancel-btn:hover {
+    background: color-mix(in srgb, var(--red, #cc3333) 20%, var(--button-background-hover)) !important;
+}
+
+/* Random Mode button active state */
+.pb-random-mode-btn.active {
+    background: color-mix(in srgb, #c97c00 30%, var(--button-background)) !important;
+    border-color: #c97c00 !important;
+    color: #e0a030 !important;
+}
+
+/* Random group tag chip */
+.pb-tag-chip-random {
+    background: color-mix(in srgb, #c97c00 25%, var(--background-panel)) !important;
+    border: 1px solid #c97c00;
+    color: var(--text) !important;
+    max-width: 320px;
+}
+
+.pb-tag-chip-random-icon {
+    flex-shrink: 0;
+}
+
+.pb-tag-chip-random-tags {
+    font-style: italic;
+    font-size: 0.85em;
+    color: var(--text-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Pending-random item card state */
+.pb-item-card.pending-random {
+    background: color-mix(in srgb, #c97c00 25%, var(--background-panel));
+    border-color: #c97c00;
+    color: var(--text);
+}
+
+.pb-item-card.pending-random:hover {
+    background: color-mix(in srgb, #c97c00 35%, var(--background-panel));
+    border-color: #e0a030;
+}

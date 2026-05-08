@@ -85,6 +85,7 @@ interface PromptBuilderState {
     selectedTags: string[];
     expandedGroups: string[];
     currentSelection: PathSelection | null;
+    randomGroups?: Record<string, string[]>;
 }
 
 interface PromptBuilderSettings {
