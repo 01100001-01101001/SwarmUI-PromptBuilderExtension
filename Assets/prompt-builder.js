@@ -326,6 +326,7 @@ class PromptBuilderApp {
         this.attachSearchListener();
         this.attachKeyboardListener();
         this.attachRandomModeListeners();
+        this.attachGenerateButtonListener();
         if (!isInPopup) {
             this.attachSettingsListeners();
         }
@@ -1127,6 +1128,17 @@ class PromptBuilderApp {
             controlsEl.style.display = 'none';
             btn?.classList.remove('active');
         }
+    }
+    attachGenerateButtonListener() {
+        const mainDoc = this.getMainDocument();
+        const generateButton = mainDoc.getElementById('alt_generate_button');
+        if (!generateButton)
+            return;
+        generateButton.addEventListener('click', () => {
+            if (this.randomGroups.size > 0) {
+                this.updatePBPromptField();
+            }
+        }, true);
     }
     attachRandomModeListeners() {
         const randomBtn = document.getElementById('pb-random-mode-btn');
