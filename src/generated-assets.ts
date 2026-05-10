@@ -65,11 +65,20 @@ namespace Templates {
             <button class="pb-action-button" id="pb-clear-button" title="Clear all tags">✕</button>
             <button class="pb-action-button" id="pb-retry-button" title="Retry generation">↻</button>
             <button class="pb-action-button pb-random-mode-btn" id="pb-random-mode-btn" title="Add a random group — pick from multiple options at generation time">&#127922; Random</button>
+            <button class="pb-action-button" id="pb-export-button" title="Export prompt to JSON file">&#8595; Export</button>
+            <button class="pb-action-button" id="pb-import-button" title="Import prompt from JSON file">&#8593; Import</button>
+            <input type="file" id="pb-import-file-input" accept=".json" style="display:none;">
             {{popoutButton}}
             <div class="pb-selected-tags" id="pb-selected-tags"></div>
         </div>
         <div class="pb-random-mode-controls" id="pb-random-mode-controls" style="display:none;">
             <span class="pb-random-mode-label" id="pb-random-mode-label">0 tags selected</span>
+            <div class="pb-random-range-controls">
+                <span class="pb-random-range-label">Pick:</span>
+                <input type="number" class="pb-random-range-input" id="pb-random-min-input" min="1" max="99" value="1">
+                <span class="pb-random-range-sep">to</span>
+                <input type="number" class="pb-random-range-input" id="pb-random-max-input" min="1" max="99" value="1">
+            </div>
             <button class="pb-action-button pb-random-confirm-btn" id="pb-random-confirm-btn" disabled>&#10003; Confirm Group</button>
             <button class="pb-action-button pb-random-cancel-btn" id="pb-random-cancel-btn">&#10005; Cancel</button>
         </div>
@@ -189,8 +198,7 @@ namespace Templates {
   data-index="{{index}}"
   data-tag="{{tag}}"
 >
-  <span class="pb-tag-chip-random-icon">&#127922;</span>
-  <span class="pb-tag-chip-random-tags">{{tags}}</span>
+  <span class="pb-tag-chip-random-icon">&#127922;</span>{{rangeLabel}}<span class="pb-tag-chip-random-tags">{{tags}}</span>
 </div>
 `;
 

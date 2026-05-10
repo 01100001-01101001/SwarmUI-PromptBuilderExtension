@@ -86,6 +86,7 @@ interface PromptBuilderState {
     expandedGroups: string[];
     currentSelection: PathSelection | null;
     randomGroups?: Record<string, string[]>;
+    randomGroupRanges?: Record<string, { min: number; max: number }>;
 }
 
 interface PromptBuilderSettings {

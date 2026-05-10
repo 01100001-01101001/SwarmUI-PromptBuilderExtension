@@ -408,7 +408,31 @@
 .pb-random-mode-label {
     font-size: 0.9em;
     color: var(--text-soft);
+}
+
+.pb-random-range-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     flex: 1;
+}
+
+.pb-random-range-label,
+.pb-random-range-sep {
+    font-size: 0.85em;
+    color: var(--text-soft);
+    white-space: nowrap;
+}
+
+.pb-random-range-input {
+    width: 52px;
+    padding: 2px 4px;
+    font-size: 0.85em;
+    text-align: center;
+    background: var(--background-input, var(--background-panel));
+    border: 1px solid var(--border-color, #555);
+    color: var(--text);
+    border-radius: 4px;
 }
 
 .pb-random-confirm-btn {
@@ -455,6 +479,30 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.pb-tag-chip-random-range {
+    font-size: 0.8em;
+    font-weight: bold;
+    color: #e0a030;
+    flex-shrink: 0;
+    margin-right: 2px;
+}
+
+/* Random chips in random mode — nestable targets */
+.pb-tag-chip-random.nestable {
+    border-style: dashed;
+    cursor: pointer;
+}
+
+.pb-tag-chip-random.nestable:hover {
+    background: color-mix(in srgb, #c97c00 40%, var(--background-panel)) !important;
+}
+
+.pb-tag-chip-random.nestable.pending-random {
+    background: color-mix(in srgb, #c97c00 45%, var(--background-panel)) !important;
+    border-style: solid;
+    box-shadow: 0 0 0 2px #c97c00;
 }
 
 /* Pending-random item card state */
